@@ -1303,6 +1303,15 @@ import {
       // they're still pinging). Used by FF so the guard never drops a
       // teammate just because they turned off position broadcasting.
       window.TamState.getP2PPlayerNames = getP2PPlayerNames;
+
+      // ── Raw roster hooks (used by the hidden Ctrl+Shift+U roster panel) ──
+      // Expose the unfiltered internal Maps directly so the panel can merge
+      // all three data sources without going through updateUI()'s
+      // allowSpectating gate. These return live Map references — callers
+      // must not mutate them. No allowSpectating filter, no ghost-mode filter.
+      window.TamState.getRawRegistry  = () => playerRegistry;      // Map<peerId, {username,region,mode,matchState,allowSpectating,lastSeen}>
+      window.TamState.getRawPositions = () => remoteMatchPositions; // Map<peerId, {id,x,y,color,activeColor,name,region,mode,gridSize,receivedAt}>
+
       initializeMod();
     }
   }, 100);
