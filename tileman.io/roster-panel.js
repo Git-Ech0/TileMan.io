@@ -4,7 +4,7 @@
  * Attaches to the existing P2P mesh (network-mod.js) via window.TamState
  * and the live playerRegistry / remoteMatchPositions Maps.
  *
- * Activation shortcut: Ctrl + Shift + F9
+ * Activation shortcut: Ctrl + Shift + U
  *   — unbound in Chrome, Firefox, Edge, Safari by default.
  *   — no UI hint, no tooltip, no button.
  *   — once open it re-renders live from the registry every 2 seconds.
@@ -30,7 +30,7 @@
   'use strict';
 
   // ─── Constants ────────────────────────────────────────────────────────────
-  const SHORTCUT_CODE = 'F9';              // Ctrl + Shift + F9
+  const SHORTCUT_CODE = 'KeyU';            // Ctrl + Shift + U
   const PANEL_ID      = '_rp_panel';
   const REFRESH_MS    = 2000;
   const PANEL_Z       = 99999;
@@ -39,27 +39,20 @@
   let panelOpen    = false;
   let refreshTimer = null;
 
-  // ─── Probe: wait for network-mod to initialise TamState hooks ────────────
-  function probe() {
-    // network-mod wires TamState.getRemoteMatchPlayers during its own init;
-    // once that exists the registries are live and we're safe to attach.
-    if (window.TamState && typeof window.TamState.getRemoteMatchPlayers === 'function') {
-      attachShortcut();
-    } else {
-      setTimeout(probe, 300);
+  // ─── Shortcut: attached immediately, no TamState gate ────────────────────
+  // The old design gated attachShortcut() behind a probe() that waited for
+  // TamState.getRemoteMatchPlayers. If that hook was slow or the mod load
+  // order changed, the listener never got registered — key presses silently
+  // did nothing. Fix: register the listener right now at script parse time.
+  // TamState readiness is checked inside togglePanel() instead, so the key
+  // always works and shows a "still loading" notice if the mesh isn't up yet.
+  document.addEventListener('keydown', function onKey(e) {
+    if (e.code === SHORTCUT_CODE && e.ctrlKey && e.shiftKey) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      togglePanel();
     }
-  }
-
-  // ─── Keyboard shortcut ────────────────────────────────────────────────────
-  function attachShortcut() {
-    document.addEventListener('keydown', function onKey(e) {
-      if (e.code === SHORTCUT_CODE && e.ctrlKey && e.shiftKey) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        togglePanel();
-      }
-    }, { capture: true });
-  }
+  }, { capture: true });
 
   // ─── Panel lifecycle ──────────────────────────────────────────────────────
   function togglePanel() {
@@ -69,6 +62,26 @@
   function openPanel() {
     panelOpen = true;
     buildDOM();
+
+    // If TamState isn't wired yet, poll until it is then do first render
+    if (!window.TamState || typeof window.TamState.getRemoteMatchPlayers !== 'function') {
+      const tbody = document.getElementById('_rp_tbody');
+      const empty = document.getElementById('_rp_empty');
+      if (empty) {
+        empty.textContent = '⏳ Waiting for P2P mesh to initialise…';
+        empty.style.display = 'block';
+      }
+      const waitForMesh = setInterval(() => {
+        if (window.TamState && typeof window.TamState.getRemoteMatchPlayers === 'function') {
+          clearInterval(waitForMesh);
+          if (empty) empty.style.display = 'none';
+          renderRoster();
+          refreshTimer = setInterval(renderRoster, REFRESH_MS);
+        }
+      }, 300);
+      return;
+    }
+
     renderRoster();
     refreshTimer = setInterval(renderRoster, REFRESH_MS);
   }
@@ -99,7 +112,7 @@
         <span id="_rp_title">◈ ACTIVE ROSTER</span>
         <div id="_rp_header_right">
           <span id="_rp_count"></span>
-          <button id="_rp_close" title="Close (Ctrl+Shift+F9)">✕</button>
+          <button id="_rp_close" title="Close (Ctrl+Shift+U)">✕</button>
         </div>
       </div>
       <div id="_rp_subbar">
@@ -127,7 +140,7 @@
         <div id="_rp_empty" style="display:none">No peers detected on the mesh.</div>
       </div>
       <div id="_rp_footer">
-        <span>Ctrl+Shift+F9 to hide · Updates every ${REFRESH_MS / 1000}s · Read-only mesh mirror</span>
+        <span>Ctrl+Shift+U to hide · Updates every ${REFRESH_MS / 1000}s · Read-only mesh mirror</span>
       </div>
     `;
 
@@ -662,8 +675,5 @@
     `;
     document.head.appendChild(s);
   }
-
-  // ─── Boot ─────────────────────────────────────────────────────────────────
-  probe();
 
 })();
